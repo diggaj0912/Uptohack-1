@@ -1395,6 +1395,13 @@ app.get("/api/admin/fraud", requireRole(['admin']), (req: any, res) => {
 // ==========================================
 
 async function startServer() {
+  // If we are running in the Vercel serverless function environment,
+  // do not launch listener or create Vite development servers.
+  if (process.env.VERCEL) {
+    console.log("Vercel Serverless runtime detected. Bypassing persistent TCP port listeners.");
+    return;
+  }
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -1415,3 +1422,5 @@ async function startServer() {
 }
 
 startServer();
+
+export default app;
