@@ -1,0 +1,6 @@
+{
+  "name": "NexStart AI Platform",
+  "description": "Premium AI-powered platform for event management, communities, ATS resume building, AI interview prep, and career growth.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
