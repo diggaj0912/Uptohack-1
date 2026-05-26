@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { UserCareerState, Resume } from "../types";
 import { 
   Trophy, Flame, Sparkles, AlertCircle, CheckCircle2, ArrowRight, 
-  Share2, ArrowUpRight, BarChart3, HelpCircle, FileCheck, CalendarDays 
+  Share2, ArrowUpRight, BarChart3, HelpCircle, FileCheck, CalendarDays,
+  Award, Download, RefreshCw
 } from "lucide-react";
 
 interface CareerModuleProps {
@@ -16,6 +17,60 @@ interface CareerModuleProps {
 export default function CareerModule({ career, resume, onAddXP, onRefreshCareer, onNavigateTab }: CareerModuleProps) {
   const [copied, setCopied] = useState(false);
   const [hoveredBar, setHoveredBar] = useState<number | null>(null);
+  
+  const [generatingCert, setGeneratingCert] = useState(false);
+  const [certSvg, setCertSvg] = useState<string | null>(null);
+  const [activeRecommendation, setActiveRecommendation] = useState<any>(null);
+  const [loadingRecs, setLoadingRecs] = useState(false);
+
+  useEffect(() => {
+    loadAIRecommendations();
+  }, []);
+
+  const loadAIRecommendations = async () => {
+    setLoadingRecs(true);
+    try {
+      const response = await fetch("/api/ai/recommendations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resumeData: resume,
+          userCareer: career
+        })
+      });
+      const data = await response.json();
+      if (data) {
+        setActiveRecommendation(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingRecs(false);
+    }
+  };
+
+  const triggerGenerateCertificate = async () => {
+    setGeneratingCert(true);
+    try {
+      const response = await fetch("/api/ai/generate-certificate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: resume.fullName || "Candidate Challenger",
+          trackName: "Staff Cloud Architect",
+          score: `${Math.min(100, 80 + career.level * 2)}% Global System Rigor`
+        })
+      });
+      const data = await response.json();
+      if (data && data.svg) {
+        setCertSvg(data.svg);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setGeneratingCert(false);
+    }
+  };
 
   const handleShareProfile = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -210,11 +265,79 @@ export default function CareerModule({ career, resume, onAddXP, onRefreshCareer,
             </div>
           </div>
 
+          {/* AI-powered Personal Matchmaking Recommendations */}
+          {activeRecommendation && (
+            <div className="p-6 rounded-2xl bg-gradient-to-br from-indigo-950/20 to-neutral-900/40 border border-purple-900/15 space-y-4 relative overflow-hidden text-left">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/5 blur-3xl rounded-full" />
+              <div className="flex justify-between items-center transition-all">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-purple-400 animate-pulse" />
+                  <div>
+                    <h3 className="text-sm font-black text-white uppercase tracking-wider">
+                      AI Matchmaking Catalyst
+                    </h3>
+                    <p className="text-[10px] text-purple-400 font-mono">PERSONALIZED ARCHITECT RECOMMENDATIONS</p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={loadAIRecommendations}
+                  disabled={loadingRecs}
+                  className="px-2.5 py-1 border border-neutral-800 hover:bg-neutral-800 rounded-lg text-[10px] text-neutral-400 flex items-center gap-1 font-mono hover:text-white transition cursor-pointer"
+                >
+                  <RefreshCw className={`w-3 h-3 ${loadingRecs ? "animate-spin" : ""}`} />
+                  {loadingRecs ? "Syncing..." : "Sync Matchmaker"}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Event Match */}
+                <div className="p-4 bg-neutral-950/80 border border-neutral-850 rounded-xl space-y-1">
+                  <span className="text-[9px] font-mono uppercase text-emerald-400 font-bold block">
+                    Dynamic Target Event
+                  </span>
+                  <p className="text-xs font-bold text-white truncate">
+                    {activeRecommendation.eventMatch?.title || "Retrieving Event..."}
+                  </p>
+                  <p className="text-[11px] text-neutral-400 leading-relaxed">
+                    {activeRecommendation.eventMatch?.reason}
+                  </p>
+                </div>
+
+                {/* Community Match */}
+                <div className="p-4 bg-neutral-950/80 border border-neutral-850 rounded-xl space-y-1">
+                  <span className="text-[9px] font-mono uppercase text-indigo-400 font-bold block">
+                    Community Channel Pair
+                  </span>
+                  <p className="text-xs font-bold text-white truncate">
+                    {activeRecommendation.communityMatch?.channel || "Retrieving Forum..."}
+                  </p>
+                  <p className="text-[11px] text-neutral-400 leading-relaxed">
+                    {activeRecommendation.communityMatch?.reason}
+                  </p>
+                </div>
+
+                {/* Sponsor Match */}
+                <div className="p-4 bg-neutral-950/80 border border-neutral-850 rounded-xl space-y-1">
+                  <span className="text-[9px] font-mono uppercase text-purple-400 font-bold block">
+                    Matching Sponsor Tier
+                  </span>
+                  <p className="text-xs font-bold text-white truncate">
+                    {activeRecommendation.sponsorMatch?.tier || "Analyzing Sponsors..."}
+                  </p>
+                  <p className="text-[11px] text-neutral-400 leading-relaxed">
+                    {activeRecommendation.sponsorMatch?.reason}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Action CTAs at bottom of metrics box */}
           <div className="flex flex-wrap items-center gap-4">
             <button
               onClick={() => onNavigateTab("resume")}
-              className="px-5 py-3 bg-white text-neutral-950 hover:bg-neutral-200 font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow"
+              className="px-5 py-3 bg-white text-neutral-950 hover:bg-neutral-200 font-bold text-xs rounded-xl transition flex items-center gap-1.5 shadow cursor-pointer"
             >
               <FileCheck className="w-4 h-4 text-neutral-950" />
               Update Resume Profile
@@ -222,7 +345,7 @@ export default function CareerModule({ career, resume, onAddXP, onRefreshCareer,
             
             <button
               onClick={handleShareProfile}
-              className="px-5 py-3 bg-neutral-900 border border-neutral-800 text-neutral-200 hover:text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5"
+              className="px-5 py-3 bg-neutral-900 border border-neutral-800 text-neutral-200 hover:text-white font-bold text-xs rounded-xl transition flex items-center gap-1.5 cursor-pointer"
             >
               <Share2 className="w-4 h-4 text-neutral-400" />
               {copied ? "Copied URL to Clipboard!" : "Share Candidate Profile"}
@@ -320,9 +443,92 @@ export default function CareerModule({ career, resume, onAddXP, onRefreshCareer,
             </div>
 
           </div>
+
+          {/* AI Certificate Portal Card */}
+          <div className="p-6 rounded-2xl bg-neutral-900/60 border border-neutral-800 relative overflow-hidden text-left space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-neutral-800/80">
+              <Award className="w-5 h-5 text-purple-400" />
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider">
+                  AI Certification Desk
+                </h3>
+                <span className="text-[9px] font-mono text-neutral-500 uppercase">SYS SECURE CERT-ID-2026</span>
+              </div>
+            </div>
+
+            <p className="text-xs text-neutral-300 leading-relaxed">
+              Synthesize an elite verification badge reflecting your Level {career.level} developer achievements. Standard SVG format, cryptographic signature, and verification token.
+            </p>
+
+            <button
+              onClick={triggerGenerateCertificate}
+              disabled={generatingCert}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+            >
+              {generatingCert ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  Compiling SVG Layout...
+                </>
+              ) : (
+                <>
+                  <Award className="w-3.5 h-3.5" />
+                  Generate Dynamic Certificate
+                </>
+              )}
+            </button>
+          </div>
+
         </div>
 
       </div>
+
+      {/* Certificate Overlay Modal */}
+      {certSvg && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-neutral-950 border border-neutral-800 p-6 rounded-2xl max-w-2xl w-full space-y-4 relative">
+            <button
+              onClick={() => setCertSvg(null)}
+              className="absolute top-4 right-4 text-xs font-mono font-bold text-neutral-400 hover:text-white border border-neutral-800 px-2 py-1 rounded cursor-pointer"
+            >
+              Close
+            </button>
+            
+            <div className="text-center">
+              <h3 className="text-lg font-black text-white">Your Algorithmic Badge of Honor</h3>
+              <p className="text-xs text-neutral-400">Custom synthesized SVG template generated serverside by Gemini LLM.</p>
+            </div>
+
+            <div 
+              className="border border-neutral-800 rounded-xl overflow-hidden aspect-[8/5] bg-black p-2 flex items-center justify-center"
+              dangerouslySetInnerHTML={{ __html: certSvg }}
+            />
+
+            <div className="flex justify-between items-center bg-neutral-900/60 p-3 rounded-xl border border-neutral-800">
+              <div className="text-left">
+                <p className="text-[10px] font-mono text-neutral-400">CERTIFICATE REGISTRY</p>
+                <p className="text-xs font-bold text-white">{resume.fullName || "Candidate Master"}</p>
+              </div>
+
+              <button
+                onClick={() => {
+                  const blob = new Blob([certSvg], { type: "image/svg+xml" });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = `Certificate-${resume.fullName?.replace(/\s+/g, "-") || "Scholar"}.svg`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="flex items-center gap-1 text-[11px] font-bold text-emerald-400 border border-emerald-500/20 px-3 py-1 bg-emerald-500/10 rounded-lg hover:bg-emerald-500/20 transition-all cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download Raw SVG
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

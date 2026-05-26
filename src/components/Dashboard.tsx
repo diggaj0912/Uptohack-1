@@ -15,6 +15,8 @@ import JudgeRoleModule from "./JudgeRoleModule";
 import MentorRoleModule from "./MentorRoleModule";
 import CmRoleModule from "./CmRoleModule";
 import AdminRoleModule from "./AdminRoleModule";
+import FintechWalletModule from "./FintechWalletModule";
+import SaaSAnalyticsModule from "./SaaSAnalyticsModule";
 
 import { UserCareerState, Resume, UserProfile, UserRole } from "../types";
 import { 
@@ -203,6 +205,8 @@ export default function Dashboard() {
   // DYNAMIC SIDEBAR MENU COMPUTED ACCORDING TO USER ROLE ISOLATION
   const getRoleMenuItems = () => {
     const defaultLanding = { id: "landing", label: "Nexus Ecosystem", icon: Sparkles, desc: "AI landing & bento suites" };
+    const walletTab = { id: "fintech_wallet", label: "Ledger Wallet", icon: DollarSign, desc: "Double-entry ledger & bank payouts" };
+    const analyticsTab = { id: "analytics", label: "Product Analytics", icon: Activity, desc: "Real-time Kafka & Recharts BI" };
 
     switch (userProfile.role) {
       case "student":
@@ -212,54 +216,70 @@ export default function Dashboard() {
           { id: "events", label: "Challenges & events", icon: Calendar, desc: "Sandbox hackathons & webinars" },
           { id: "resume", label: "ATS CV Auditor", icon: Briefcase, desc: "Typography CV editor & scoring" },
           { id: "interview", label: "AI Technical Prep", icon: Brain, desc: "CTO mock simulations" },
-          { id: "communities", label: "Discord Forums", icon: MessageSquare, desc: "#channels & moderation checks" }
+          { id: "communities", label: "Discord Forums", icon: MessageSquare, desc: "#channels & moderation checks" },
+          walletTab,
+          analyticsTab
         ];
 
       case "organizer":
         return [
           defaultLanding,
           { id: "organizer_dashboard", label: "Organizer Suite", icon: Trophy, desc: "CRM, Mail blasters, sponsors" },
-          { id: "communities", label: "Discord Forums", icon: MessageSquare, desc: "#channels & moderation checks" }
+          { id: "communities", label: "Discord Forums", icon: MessageSquare, desc: "#channels & moderation checks" },
+          walletTab,
+          analyticsTab
         ];
 
       case "recruiter":
         return [
           defaultLanding,
-          { id: "recruiter_dashboard", label: "Recruiter Hub", icon: Users, desc: "Candidates directory & ATS audits" }
+          { id: "recruiter_dashboard", label: "Recruiter Hub", icon: Users, desc: "Candidates directory & ATS audits" },
+          walletTab,
+          analyticsTab
         ];
 
       case "sponsor":
         return [
           defaultLanding,
-          { id: "sponsor_dashboard", label: "Sponsor Lounge", icon: DollarSign, desc: "Events marketplace & coupon KPI" }
+          { id: "sponsor_dashboard", label: "Sponsor Lounge", icon: DollarSign, desc: "Events marketplace & coupon KPI" },
+          walletTab,
+          analyticsTab
         ];
 
       case "judge":
         return [
           defaultLanding,
-          { id: "judge_dashboard", label: "Evaluation Center", icon: Compass, desc: "Grade hackathon submissions" }
+          { id: "judge_dashboard", label: "Evaluation Center", icon: Compass, desc: "Grade hackathon submissions" },
+          walletTab,
+          analyticsTab
         ];
 
       case "mentor":
         return [
           defaultLanding,
-          { id: "mentor_dashboard", label: "Consultation Suite", icon: Brain, desc: "Student scheduled appointments" }
+          { id: "mentor_dashboard", label: "Consultation Suite", icon: Brain, desc: "Student scheduled appointments" },
+          walletTab,
+          analyticsTab
         ];
 
       case "community_manager":
         return [
           defaultLanding,
-          { id: "community_manager_dashboard", label: "Moderator CRM", icon: Activity, desc: "Sentiment diagnostics & chat CRM" }
+          { id: "community_manager_dashboard", label: "Moderator CRM", icon: Activity, desc: "Sentiment diagnostics & chat CRM" },
+          walletTab,
+          analyticsTab
         ];
 
       case "admin":
         return [
           defaultLanding,
-          { id: "admin_dashboard", label: "Super Admin panel", icon: ShieldAlert, desc: "Database catalog override & audits" }
+          { id: "admin_dashboard", label: "Super Admin panel", icon: ShieldAlert, desc: "Database catalog override & audits" },
+          walletTab,
+          analyticsTab
         ];
 
       default:
-        return [defaultLanding];
+        return [defaultLanding, walletTab, analyticsTab];
     }
   };
 
@@ -533,6 +553,21 @@ export default function Dashboard() {
                 sessionToken={sessionToken} 
                 onAddXP={handleAddXP} 
                 onRoleChanged={handleSelfReload}
+              />
+            )}
+
+            {activeTab === "fintech_wallet" && (
+              <FintechWalletModule 
+                sessionToken={sessionToken}
+                onBalanceUpdate={(newBal) => {
+                  setUserProfile(prev => prev ? { ...prev, balance: newBal } : null);
+                }}
+              />
+            )}
+
+            {activeTab === "analytics" && (
+              <SaaSAnalyticsModule 
+                sessionToken={sessionToken || ""}
               />
             )}
 

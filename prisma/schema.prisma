@@ -1,0 +1,475 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// 1. IDENTITY & ACCESS CONTROL (RBAC) MODULE
+// ==========================================
+
+enum UserRole {
+  STUDENT
+  ORGANIZER
+  RECRUITER
+  SPONSOR
+  JUDGE
+  MENTOR
+  COMMUNITY_MANAGER
+  ADMIN
+}
+
+model User {
+  id               String            @id @default(uuid()) @db.Uuid
+  email            String            @unique @db.VarChar(255)
+  passwordHash     String            @db.VarChar(255)
+  fullName         String            @db.VarChar(255)
+  role             UserRole          @default(STUDENT)
+  createdAt        DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @db.Timestamptz(6)
+  deletedAt        DateTime?         @db.Timestamptz(6) // Soft Delete support
+  isVerified       Boolean           @default(false)
+  tenantId         String            @default("default-tenant") @db.VarChar(128)
+
+  // One-to-One Relationships
+  careerState      CareerState?
+  resume           Resume?
+
+  // One-to-Many Relationships
+  organizedEvents  Event[]           @relation("OrganizerEvents")
+  registrations    EventRegistration[]
+  teamMembers      TeamMember[]
+  submissions      Submission[]
+  comments         Comment[]
+  moderatedActions ModerationLog[]   @relation("ModeratorActions")
+  senderReferrals  Referral[]        @relation("ReferrerRelation")
+  claimReferrals   Referral[]        @relation("ReferredRelation")
+  issuedInvoices   Invoice[]         @relation("InvoicePayer")
+  recipientInvoices Invoice[]        @relation("InvoiceRecipient")
+  activityLogs     ActivityLog[]
+  sponsorships     Sponsorship[]     @relation("CorporateSponsor")
+  grades           Grade[]           @relation("JudgeGrades")
+  appointmentsAsMentor    Appointment[] @relation("MentorAppointments")
+  appointmentsAsStudent   Appointment[] @relation("StudentAppointments")
+
+  // Indexes for extreme performance & multi-tenant isolation lookup
+  @@index([email])
+  @@index([tenantId])
+  @@index([role])
+  @@map("users")
+}
+
+// ==========================================
+// 2. CAREER METRICS & XP SYSTEM INDEX
+// ==========================================
+
+model CareerState {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @unique @db.Uuid
+  xp             Int       @default(0)
+  level          Int       @default(1)
+  streak         Int       @default(0)
+  skillsTracker  Json      // Model representation: {"Full-Stack Web": 75, "AI": 50...}
+  lastActiveAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([xp(sort: Desc)])
+  @@map("career_states")
+}
+
+// ==========================================
+// 3. ATS RESUME & SYSTEM CV PARSER
+// ==========================================
+
+model Resume {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @unique @db.Uuid
+  fullName       String    @db.VarChar(255)
+  email          String    @db.VarChar(255)
+  phone          String?   @db.VarChar(32)
+  website        String?   @db.VarChar(255)
+  skills         String[]  // Array of string labels
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime  @updatedAt @db.Timestamptz(6)
+
+  // Related Subsections
+  experiences    Experience[]
+  educations     Education[]
+  projects       Project[]
+  atsAudits      AtsAudit[]
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("resumes")
+}
+
+model Experience {
+  id          String    @id @default(uuid()) @db.Uuid
+  resumeId    String    @db.Uuid
+  company     String    @db.VarChar(255)
+  role        String    @db.VarChar(255)
+  startDate   String    @db.VarChar(32)
+  endDate     String?   @db.VarChar(32)
+  bulletPoints String[]  // Multi-line detailed impact bullet descriptions
+
+  resume      Resume    @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId])
+  @@map("experiences")
+}
+
+model Education {
+  id          String    @id @default(uuid()) @db.Uuid
+  resumeId    String    @db.Uuid
+  institution String    @db.VarChar(255)
+  degree      String    @db.VarChar(255)
+  year        String    @db.VarChar(32)
+
+  resume      Resume    @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId])
+  @@map("educations")
+}
+
+model Project {
+  id          String    @id @default(uuid()) @db.Uuid
+  resumeId    String    @db.Uuid
+  title       String    @db.VarChar(255)
+  description String    @db.Text
+  url         String?   @db.VarChar(255)
+
+  resume      Resume    @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId])
+  @@map("projects")
+}
+
+model AtsAudit {
+  id           String   @id @default(uuid()) @db.Uuid
+  resumeId     String   @db.Uuid
+  overallScore Int      // 0 to 100 rating index
+  grammarScore Int
+  impactScore  Int
+  keywordsScore Int
+  feedbackJson Json     // Holds structured AI critique report recommendations
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  resume       Resume   @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+
+  @@index([resumeId])
+  @@map("ats_audits")
+}
+
+// ==========================================
+// 4. EVENTS & CHALLENGES MODULE
+// ==========================================
+
+enum EventCategory {
+  MEETUP
+  HACKATHON
+  WEBINAR
+}
+
+model Event {
+  id             String              @id @default(uuid()) @db.Uuid
+  title          String              @db.VarChar(255)
+  description    String              @db.Text
+  category       EventCategory       @default(HACKATHON)
+  date           String              @db.VarChar(64)
+  location       String              @db.VarChar(255)
+  image          String?             @db.VarChar(255)
+  attendeesCount Int                 @default(0)
+  organizerId    String              @db.Uuid
+  aiSummary      String?             @db.Text // AI Generated Event Intro summaries
+  createdAt      DateTime            @default(now()) @db.Timestamptz(6)
+  deletedAt      DateTime?           @db.Timestamptz(6)
+
+  organizer      User                @relation("OrganizerEvents", fields: [organizerId], references: [id])
+  registrations  EventRegistration[]
+  teams          Team[]              // Teams registered inside this event block
+  sponsorships   Sponsorship[]
+
+  @@index([organizerId])
+  @@index([category])
+  @@map("events")
+}
+
+model EventRegistration {
+  id         String   @id @default(uuid()) @db.Uuid
+  eventId    String   @db.Uuid
+  userId     String   @db.Uuid
+  registeredAt DateTime @default(now()) @db.Timestamptz(6)
+
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@map("event_registrations")
+}
+
+// ==========================================
+// 5. TEAMS, MEMBERS & HACKATHON SUBMISSIONS
+// ==========================================
+
+model Team {
+  id          String        @id @default(uuid()) @db.Uuid
+  eventId     String        @db.Uuid
+  name        String        @db.VarChar(255)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(6)
+
+  event       Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  members     TeamMember[]
+  submissions Submission[]
+
+  @@index([eventId])
+  @@map("teams")
+}
+
+model TeamMember {
+  id        String   @id @default(uuid()) @db.Uuid
+  teamId    String   @db.Uuid
+  userId    String   @db.Uuid
+  role      String   @default("Developer") @db.VarChar(128)
+  joinedAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  team      Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@map("team_members")
+}
+
+model Submission {
+  id             String   @id @default(uuid()) @db.Uuid
+  teamId         String   @db.Uuid
+  userId         String   @db.Uuid // Main contact submitter
+  projectTitle   String   @db.VarChar(255)
+  projectDescription String @db.Text
+  demoVideoUrl   String?  @db.VarChar(255)
+  githubUrl      String?  @db.VarChar(255)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  team           Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grades         Grade[]
+
+  @@index([teamId])
+  @@map("submissions")
+}
+
+model Grade {
+  id             String   @id @default(uuid()) @db.Uuid
+  submissionId   String   @db.Uuid
+  judgeId        String   @db.Uuid
+  scoreUI        Int      // Individual grading rubric UX/UI score index
+  scoreUX        Int
+  scoreFE        Int
+  scoreBE        Int
+  scoreQuality   Int
+  totalScore     Float    // Aggregated grade index
+  comment        String?  @db.Text
+  gradedAt       DateTime @default(now()) @db.Timestamptz(6)
+
+  submission     Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  judge          User     @relation("JudgeGrades", fields: [judgeId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, judgeId])
+  @@map("grades")
+}
+
+// ==========================================
+// 6. COMMUNITIES, FORUM POSTS & DISCORD CHANNELS
+// ==========================================
+
+model Channel {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(128) // e.g. "general", "ai-talks"
+  description String   @db.Text
+  categoryId  String   @default("default") @db.VarChar(128)
+
+  posts       Post[]
+
+  @@map("channels")
+}
+
+model Post {
+  id          String    @id @default(uuid()) @db.Uuid
+  channelId   String    @db.Uuid
+  fullName    String    @db.VarChar(255) // Cached sender handle label
+  roleLabel   String    @default("Student") @db.VarChar(128)
+  body        String    @db.Text
+  sentiment   String    @default("NEUTRAL") @db.VarChar(32) // AI-evaluated sentiment
+  timestamp   String    @db.VarChar(64) // For legacy UI alignment
+  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
+
+  channel     Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  comments    Comment[]
+
+  @@index([channelId])
+  @@map("posts")
+}
+
+model Comment {
+  id        String   @id @default(uuid()) @db.Uuid
+  postId    String   @db.Uuid
+  userId    String   @db.Uuid
+  author    String   @db.VarChar(255)
+  body      String   @db.Text
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@map("comments")
+}
+
+// ==========================================
+// 7. PAYMENTS, COUPONS & CORPORATE SPONSORS
+// ==========================================
+
+model Sponsorship {
+  id             String   @id @default(uuid()) @db.Uuid
+  eventId        String   @db.Uuid
+  corporateId    String   @db.Uuid // Corporate Sponsor User Record ID
+  tier           String   @db.VarChar(128) // "Silver", "Gold", "Unicorn"
+  logoUrl        String?  @db.VarChar(255)
+  contributedUsd Decimal  @db.Decimal(12, 2)
+  couponsIssued  Int      @default(0)
+  clicksReported Int      @default(0)
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  corporate      User     @relation("CorporateSponsor", fields: [corporateId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("sponsorships")
+}
+
+model Invoice {
+  id            String   @id @default(uuid()) @db.Uuid
+  payerId       String   @db.Uuid
+  recipientId   String   @db.Uuid
+  amountUsd     Decimal  @db.Decimal(12, 2)
+  status        String   @default("PENDING") @db.VarChar(64) // "PENDING", "PAID", "VOID"
+  paymentIntent String?  @unique @db.VarChar(255) // Stripe system mapping Key
+  createdAt     DateTime @default(now()) @db.Timestamptz(6)
+  paidAt        DateTime? @db.Timestamptz(6)
+
+  payer         User     @relation("InvoicePayer", fields: [payerId], references: [id])
+  recipient     User     @relation("InvoiceRecipient", fields: [recipientId], references: [id])
+
+  @@index([payerId])
+  @@index([status])
+  @@map("invoices")
+}
+
+// ==========================================
+// 8. CERTIFICATES LEDGER (PROOFS OF COMPETENCY)
+// ==========================================
+
+model Certificate {
+  id               String   @id @default(uuid()) @db.Uuid
+  userId           String   @db.Uuid
+  trackName        String   @db.VarChar(255)
+  digitalSignature String   @unique @db.VarChar(512) // Cryptographical AI Signature token
+  scoreLabel       String   @db.VarChar(128)
+  issuedAt         DateTime @default(now()) @db.Timestamptz(6)
+  imageUrl         String?  @db.VarChar(255)
+
+  @@index([userId])
+  @@map("certificates")
+}
+
+// ==========================================
+// 9. REFERRALS & USER NETWORKING SYSTEM
+// ==========================================
+
+model Referral {
+  id           String   @id @default(uuid()) @db.Uuid
+  referrerId   String   @db.Uuid
+  referredId   String   @db.Uuid
+  rewardXp     Int      @default(150)
+  isClaimed    Boolean  @default(false)
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+
+  referrer     User     @relation("ReferrerRelation", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred     User     @relation("ReferredRelation", fields: [referredId], references: [id], onDelete: Cascade)
+
+  @@unique([referrerId, referredId])
+  @@map("referrals")
+}
+
+// ==========================================
+// 10. MENTOR APPOINTMENTS MODULE
+// ==========================================
+
+model Appointment {
+  id         String   @id @default(uuid()) @db.Uuid
+  mentorId   String   @db.Uuid
+  studentId  String   @db.Uuid
+  slotTime   String   @db.VarChar(128) // e.g., "Wednesday 4:30 PM"
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  mentor     User     @relation("MentorAppointments", fields: [mentorId], references: [id], onDelete: Cascade)
+  student    User     @relation("StudentAppointments", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([mentorId])
+  @@index([studentId])
+  @@map("appointments")
+}
+
+// ==========================================
+// 11. AUDIT, EVENT QUEUE & TELEMETRY SYSTEMS
+// ==========================================
+
+model ActivityLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @db.Uuid
+  ipAddress String?  @db.VarChar(45)
+  userAgent String?  @db.VarChar(255)
+  action    String   @db.VarChar(128) // "USER_LOGIN", "ATS_SCORE_INITIATED"
+  metadata  Json     // Holds context telemetry variables
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([action, createdAt])
+  @@map("activity_logs")
+}
+
+model ModerationLog {
+  id             String   @id @default(uuid()) @db.Uuid
+  moderatorId    String   @db.Uuid
+  reportedUserId String   @db.Uuid
+  contentType    String   @db.VarChar(64) // "POST", "COMMENT"
+  contentId      String   @db.VarChar(128)
+  decision       String   @db.VarChar(128) // "APPROVED", "HIDDEN", "USER_MUTED"
+  auditNote      String?  @db.Text
+  createdAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  moderator      User     @relation("ModeratorActions", fields: [moderatorId], references: [id])
+
+  @@index([moderatorId])
+  @@map("moderation_logs")
+}
+
+model EventQueue {
+  id         String   @id @default(uuid()) @db.Uuid
+  queueName  String   @db.VarChar(128) // "email-delivery", "certificate-compilation"
+  payload    Json
+  attempts   Int      @default(0)
+  maxRetries Int      @default(3)
+  status     String   @default("QUEUED") @db.VarChar(64) // "QUEUED", "PROCESSING", "COMPLETED", "FAILED"
+  errorLog   String?  @db.Text
+  runAfter   DateTime @default(now()) @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([status, runAfter])
+  @@map("event_queues")
+}

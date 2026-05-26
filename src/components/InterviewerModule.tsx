@@ -19,6 +19,36 @@ export default function InterviewerModule({ onAddXP }: InterviewerModuleProps) {
   const [history, setHistory] = useState<Record<string, { answer: string; feedback: InterviewFeedback }>>({});
   const [micActive, setMicActive] = useState(false);
   const [simulatedText, setSimulatedText] = useState("");
+  const [playingVoice, setPlayingVoice] = useState(false);
+
+  const handleSpeakQuestion = async (text: string) => {
+    setPlayingVoice(true);
+    try {
+      const response = await fetch("/api/ai/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, voice: "Kore" })
+      });
+      const data = await response.json();
+      if (data && data.audio && data.audio !== "MOCK_AUDIO_BASE64_STREAM_DATA") {
+        const audioUrl = `data:audio/wav;base64,${data.audio}`;
+        const audio = new Audio(audioUrl);
+        audio.play().catch(e => console.error("Audio block playback issue", e));
+      } else {
+        if ('speechSynthesis' in window) {
+          window.speechSynthesis.cancel();
+          const utterance = new SpeechSynthesisUtterance(text);
+          window.speechSynthesis.speak(utterance);
+        } else {
+          alert("Audio playback simulation executed.");
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setPlayingVoice(false);
+    }
+  };
 
   const roles = [
     { name: "Web Frontend Engineering", track: "Full-Stack Web" },
@@ -194,10 +224,20 @@ export default function InterviewerModule({ onAddXP }: InterviewerModuleProps) {
                 <div className="w-10 h-10 shrink-0 rounded-full bg-emerald-500/15 border border-emerald-500/20 flex items-center justify-center">
                   <Brain className="w-5 h-5 text-emerald-400" />
                 </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-neutral-200 uppercase font-mono tracking-wide mb-1">
-                    NexStart Board-CTO
-                  </h4>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <h4 className="text-sm font-semibold text-neutral-200 uppercase font-mono tracking-wide">
+                      NexStart Board-CTO
+                    </h4>
+                    <button
+                      onClick={() => handleSpeakQuestion(currentQ.question)}
+                      disabled={playingVoice}
+                      className="px-2 py-1 text-[10px] bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded text-emerald-400 font-mono font-bold flex items-center gap-1 transition-all cursor-pointer"
+                    >
+                      <Play className="w-3 h-3 text-emerald-400 fill-emerald-400" />
+                      {playingVoice ? "Converting Speech..." : "Listen to CTO Prompt (AI Voice)"}
+                    </button>
+                  </div>
                   <p className="text-base font-bold text-white leading-relaxed">
                     {currentQ.question}
                   </p>

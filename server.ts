@@ -234,7 +234,12 @@ import {
   getCommunityPosts,
   saveCommunityPost,
   upvotePost,
-  saveDatabase
+  saveDatabase,
+  getWalletBalance,
+  getLedgerEntries,
+  submitPayoutRequest,
+  processPaymentSimulator,
+  getPayoutRequests
 } from "./src/backendDb";
 
 import { UserRole } from "./src/types";
@@ -745,6 +750,383 @@ app.post("/api/career/roadmap", async (req: any, res) => {
   }
 });
 
+// ==========================================
+// UNIFIED ENTERPRISE AI SAAS SERVICES ENDPOINTS
+// ==========================================
+
+// 1. AI SPEECH SYNTHESIS / VOICE PROTOCOL (gemini-3.1-flash-tts-preview)
+app.post("/api/ai/tts", async (req: any, res) => {
+  const { text, voice } = req.body;
+  if (!text) {
+    return res.status(400).json({ error: "Text content is required for voice synthesis." });
+  }
+
+  const selectedVoice = voice || "Kore"; // Puck, Charon, Kore, Fenrir, Zephyr
+
+  if (!ai) {
+    return res.json({ 
+      success: true, 
+      audio: "MOCK_AUDIO_BASE64_STREAM_DATA", 
+      message: "Speech generated via mock high-fidelity simulator successfully." 
+    });
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.1-flash-tts-preview",
+      contents: [{ parts: [{ text: text }] }],
+      config: {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName: selectedVoice },
+          },
+        },
+      },
+    });
+
+    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    if (base64Audio) {
+      res.json({ success: true, audio: base64Audio, voice: selectedVoice });
+    } else {
+      res.status(500).json({ error: "No audio data returned from voice model." });
+    }
+  } catch (err: any) {
+    console.error("Gemini Speech Synthesis Error:", err);
+    res.status(500).json({ error: "Failed to generate speech: " + err.message });
+  }
+});
+
+// 2. AI CERTIFICATE DESIGN PROMPT PROTOCOL (SVG format render)
+app.post("/api/ai/generate-certificate", async (req: any, res) => {
+  const { name, trackName, score } = req.body;
+  if (!name || !trackName) {
+    return res.status(400).json({ error: "Name and track name are required to generate a certificate." });
+  }
+
+  const prompt = `You are a professional SVG design wizard and elite certification system architect.
+  Generate a stunning, ultra-modern dark-themed professional modern technical certificate in SVG format.
+  Candidate: "${name}"
+  Track achieved: "${trackName}"
+  Score / XP achieved: "${score || '95%'}"
+  
+  The certificate must include:
+  1. A dark indigo and purple gradient backdrop (colors suited to NexStart Premium UI).
+  2. Elegant borders, subtle geometric tech accent patterns, and signatures of AI CTO.
+  3. A badge of honor that looks highly authoritative.
+  4. Response must be a raw string of a fully self-contained valid <svg ...>...</svg> tag. No markdown wrappers, no backticks, no text before or after the svg tag. Valid XML/SVG only. Ensure text is readable with high contrast on the dark background.`;
+
+  if (!ai) {
+    const fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" width="100%" height="100%">
+      <rect width="800" height="500" rx="20" fill="#000000" stroke="#1f2937" stroke-width="4"/>
+      <rect width="760" height="460" x="20" y="20" rx="10" fill="#09090b" stroke="#7c3aed" stroke-width="2" stroke-opacity="0.4"/>
+      <defs>
+        <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#c084fc" />
+          <stop offset="100%" stop-color="#6366f1" />
+        </linearGradient>
+      </defs>
+      <text x="400" y="90" font-family="'Inter', sans-serif" font-weight="900" font-size="20" fill="#8b5cf6" letter-spacing="4" text-anchor="middle">NEXSTART AI GLOBAL RESOURCE LABS</text>
+      <text x="400" y="140" font-family="'Inter', sans-serif" font-weight="400" font-size="14" fill="#a3a3a3" text-anchor="middle">THIS IS CRITICALLY GRANTED TO</text>
+      <text x="400" y="210" font-family="'Inter', sans-serif" font-weight="900" font-size="34" fill="url(#textGrad)" text-anchor="middle" letter-spacing="1">${name.toUpperCase()}</text>
+      <text x="400" y="260" font-family="'Inter', sans-serif" font-weight="400" font-size="15" fill="#e5e5e5" text-anchor="middle">FOR EXTRAORDINARY SYSTEMS RIGOR DEMONSTRATED IN DEVELOPMENT RUNTIMES</text>
+      <text x="400" y="300" font-family="'Inter', sans-serif" font-weight="700" font-size="18" fill="#10b981" text-anchor="middle">TRACK: ${trackName.toUpperCase()} — TOP SCORING: ${score || '95%'}</text>
+      <line x1="200" y1="380" x2="600" y2="380" stroke="#27272a" stroke-width="1"/>
+      <text x="300" y="415" font-family="'Fira Code', monospace" font-size="10" fill="#71717a" text-anchor="middle">AUTHORIZED SIGNATURE: NEXSTART AI INTEGRATION ENGINE</text>
+      <text x="500" y="415" font-family="'Fira Code', monospace" font-size="10" fill="#71717a" text-anchor="middle">ISSUE DATE: MAY 2026 — SECURE TOKEN: CX-104928</text>
+    </svg>`;
+    return res.json({ success: true, svg: fallbackSvg });
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+    });
+    let svgResult = response.text || "";
+    // Clean potential markdown blocks
+    if (svgResult.includes("```xml")) {
+      svgResult = svgResult.split("```xml")[1].split("```")[0];
+    } else if (svgResult.includes("```svg")) {
+      svgResult = svgResult.split("```svg")[1].split("```")[0];
+    } else if (svgResult.includes("```html")) {
+      svgResult = svgResult.split("```html")[1].split("```")[0];
+    } else if (svgResult.includes("```")) {
+      svgResult = svgResult.split("```")[1]?.split("```")[0] || svgResult;
+    }
+    res.json({ success: true, svg: svgResult.trim() });
+  } catch (err: any) {
+    console.error("Gemini Certificate Generation Error:", err);
+    res.status(500).json({ error: "Failed to generate SVG certificate: " + err.message });
+  }
+});
+
+// 3. AI DYNAMIC EVENT PAGE GENERATION
+app.post("/api/ai/generate-event-page", async (req: any, res) => {
+  const { title, targetCategory, keywords } = req.body;
+  if (!title) {
+    return res.status(400).json({ error: "Title is required for generating an event landing." });
+  }
+
+  const prompt = `You are a professional marketing officer and developer relations lead. Create an exhaustive, highly engaging, beautifully formatted Markdown landing micro-page description for a upcoming high-fidelity tech community event.
+  Event Title: "${title}"
+  Category: "${targetCategory || 'hackathon'}"
+  Keywords: "${keywords || 'agents, typescript, system architecture, performance'}"
+  
+  The output should be rich markdown containing:
+  - An impressive Event Tagline
+  - Brief "Why You Cannot Miss This" section
+  - A structured Hourly Schedule / Track list
+  - Real-world high-profile tracks and prize tiers (e.g. $10,000 cash prizes)
+  - Prerequisite skills checklist and dynamic setup guidance.
+  Make it look structured, professional, and full of engineering focus.`;
+
+  if (!ai) {
+    const fallbackMd = `## 🏆 NEXSTART AI: ${title.toUpperCase()}
+*Accelerate your autonomous pipelines in high-level parallelized developer streams.*
+
+Welcome developer-pioneers! This immersive **${targetCategory || 'engineering sandbox'}** is built to scale your core models, evaluate modern real-time WebSockets, and refine your system-level latency down to the millisecond.
+
+### ⚡ Highlights & Key Takeaways
+- **Production Grader Validation**: Benchmark your custom solutions under simulated multi-tenant loads.
+- **Elite Networking Salon**: Partner with AI founders and seasoned CTO judges from leading infrastructure funds.
+- **Unified Hackathon Sandbox**: Secure dedicated cloud run allocations with pre-loaded PostgreSQL database clusters.
+
+### 📅 Agenda & Schedule
+| Time (PST) | Title | Track Segment |
+| --- | --- | --- |
+| 09:00 AM | **Opening Ceremony & Global Vector Schema Initializer** | Core Keynote |
+| 11:30 AM | **RAG Optimizing Masterclass: Multi-Query Search & Fine Tuning** | Tech Lab |
+| 02:00 PM | **Hacking Launch & Agentic Chat Orchestration Pipelines** | Dev Phase |
+| 05:00 PM | **Evaluation, Innovation Scoring & Live Demo Pushes** | Grading Arena |
+
+### 🛠️ Hardware Requirements & Prerequisites
+- Strong working familiarity with TypeScript, Express API routing frameworks, and ESM bundling setups.
+- Dedicated AWS or GCP trial sandbox credentials.`;
+    return res.json({ success: true, markdown: fallbackMd });
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+    });
+    res.json({ success: true, markdown: response.text });
+  } catch (err: any) {
+    console.error("Gemini Event Page Generation Error:", err);
+    res.status(500).json({ error: "Failed to generate page content." });
+  }
+});
+
+// 4. AI CRM OUTREACH CAMPAIGN WRITER
+app.post("/api/ai/generate-campaign", async (req: any, res) => {
+  const { eventName, campaignObjective, recipientGroup } = req.body;
+  if (!eventName || !campaignObjective) {
+    return res.status(400).json({ error: "Event name and campaign objective are required." });
+  }
+
+  const prompt = `You are an elite developer evangelist and professional SaaS campaigner. Generate a premium, highly tailored transactional email blander and push notice campaign context copy.
+  Event Name: "${eventName}"
+  Campaign Objective: "${campaignObjective}"
+  Target Recipient Group: "${recipientGroup || 'registered hackers'}"
+  
+  Format the output clearly separating:
+  1. SUBJECT LINE: A clickable, urgent, highly engaging topic.
+  2. EMAIL BODY: Professional, sleek greeting, value propositions, countdown call-to-actions, and standard placeholder sign-offs.
+  3. SMS/WHATSAPP BULLETIN: Brief 160-character mobile reminder.
+  Make the tone highly compelling, focused, and free of sales buzzwords.`;
+
+  if (!ai) {
+    const fallbackCampaign = `### [CAMPAIGN TEMPLATE: CO-FOUND SYSTEM CODES]
+
+**Email Subject Line:** 🚨 Alex Rivera, solve matching agent problems in the ${eventName} sandbox [48H Remaining]
+
+**Email Body:**
+Hi candidate,
+
+The development team at NextStart has inspected your active career parameters and found an exceptional alignment. We are inviting you to deploy your skills inside the upcoming **${eventName}** sandbox workspace.
+
+Our matching algorithms verified your experience in React and TypeScript is 84% matched to our premier enterprise system challenges. Participating secures you direct exposure to VC mentors, live grading reports, and a fast-track recruiter referral channel to stripe.
+
+**Why Join Today?**
+- Claim immediate Level 4 developer badges.
+- Qualify for up to $15,000 in immediate cash grants and sponsor bonuses.
+- Access pre-authenticated OpenAI/Gemini developer resource accounts for the entire hackathon block.
+
+👉 Click here to confirm registration: [Secure My Workspace Barrier]
+
+Sincerely,
+NexStart Developer Relations Team
+
+---
+
+**Mobile WhatsApp Short Message Bulletin:**
+🚀 NexStart Alert: Alex, your profile matches the ${eventName} challenges perfectly. Register today, lock in Level 4 rewards, and pitch to leading tech co-founders!`;
+    return res.json({ success: true, campaign: fallbackCampaign });
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+    });
+    res.json({ success: true, campaign: response.text });
+  } catch (err: any) {
+    console.error("Gemini Campaign Generation Error:", err);
+    res.status(500).json({ error: "Failed to generate campaign assets." });
+  }
+});
+
+// 5. AI HACKATHON TEAM MATCHING & CO-PILOT
+app.post("/api/ai/hackathon-copilot", async (req: any, res) => {
+  const { resumeData, projectIdea } = req.body;
+  if (!projectIdea) {
+    return res.status(400).json({ error: "Please enter your product hypothesis or idea." });
+  }
+
+  const prompt = `You are staff software engineer and Lead Hackathon Mentor. Analyze this student's hackathon project idea: "${projectIdea}".
+  Student CV Context: ${JSON.stringify(resumeData || {})}
+  
+  Provide a professional technical blueprint. Respond with a strictly formatted JSON:
+  {
+    "feasibility": "High / Medium / Low",
+    "recommendedStack": ["Tech 1", "Tech 2"],
+    "criticalArchitectureSteps": ["Step 1", "Step 2", "Step 3"],
+    "suggestedTeammates": ["Frontend UI Designer Specialist", "Database Systems Optimization Engineer"],
+    "copilotTips": "Valuable tips to stand out to elite venture judges."
+  }
+  Valid JSON output only. No markdown formatting.`;
+
+  if (!ai) {
+    return res.json({
+      feasibility: "High",
+      recommendedStack: ["React 19", "TypeScript", "Express API router", "Pinecone Vector Storage", "Gemini-3.5-flash API"],
+      criticalArchitectureSteps: [
+        "Initialize server-side proxy routes to query Gemini safely without exposing keys.",
+        "Set up local storage mock vectors or lightweight schema to run semantic lookup query matching.",
+        "Leverage React transitions and motion frames for elegant, high-contrast UI state re-indexing."
+      ],
+      suggestedTeammates: [
+        "Infrastructure and Cloud deployment engineer",
+        "Visual UX branding designer specialized in Tailwind styles"
+      ],
+      copilotTips: "Venture judges score heavily on 'Production-Grade Completeness'. Avoid leaving uncompleted modules and build a beautiful, fluid greeting with genuine dynamic APIs."
+    });
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            feasibility: { type: Type.STRING },
+            recommendedStack: { type: Type.ARRAY, items: { type: Type.STRING } },
+            criticalArchitectureSteps: { type: Type.ARRAY, items: { type: Type.STRING } },
+            suggestedTeammates: { type: Type.ARRAY, items: { type: Type.STRING } },
+            copilotTips: { type: Type.STRING }
+          },
+          required: ["feasibility", "recommendedStack", "criticalArchitectureSteps", "suggestedTeammates", "copilotTips"]
+        }
+      }
+    });
+
+    const parsed = JSON.parse(response.text?.trim() || "{}");
+    res.json(parsed);
+  } catch (err: any) {
+    console.error("Gemini Copilot/Team Matching Error:", err);
+    res.status(500).json({ error: "Failed to query AI copilot: " + err.message });
+  }
+});
+
+// 6. AI ENTERPRISE SPONSOR & PORTAL MATCHMAKER
+app.post("/api/ai/recommendations", async (req: any, res) => {
+  const { resumeData, userCareer } = req.body;
+
+  const prompt = `You are an elite career matches manager. Review candidate profile:
+  CV: ${JSON.stringify(resumeData || {})}
+  Stats/Level: ${JSON.stringify(userCareer || {})}
+  
+  We need 3 customized matching assets from our system database:
+  1. An Event challenge matching their current skills XP.
+  2. A Community Discord channel pairing recommendations.
+  3. A Sponsorship track tier aligning with their hackathon ideas.
+  
+  Respond in strictly standard JSON format matching this shape:
+  {
+    "eventMatch": { "title": "...", "reason": "..." },
+    "communityMatch": { "channel": "#...", "reason": "..." },
+    "sponsorMatch": { "tier": "...", "reason": "..." }
+  }
+  Raw valid JSON only, no markdown.`;
+
+  if (!ai) {
+    return res.json({
+      eventMatch: {
+        title: "Agents Build Weekend (Nov 12)",
+        reason: "Your outstanding 80% TypeScript XP skill rating is a custom alignment indicator for autonomous orchestrations."
+      },
+      communityMatch: {
+        channel: "#ai-talks",
+        reason: "Matches your career goals around AI Integration and system engineering patterns."
+      },
+      sponsorMatch: {
+        tier: "Venture Growth tier ($5,000 cash grant)",
+        reason: "Your background in solid Stripe checkout interfaces suits micro-transactional sponsorships."
+      }
+    });
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            eventMatch: {
+              type: Type.OBJECT,
+              properties: {
+                title: { type: Type.STRING },
+                reason: { type: Type.STRING }
+              },
+              required: ["title", "reason"]
+            },
+            communityMatch: {
+              type: Type.OBJECT,
+              properties: {
+                channel: { type: Type.STRING },
+                reason: { type: Type.STRING }
+              },
+              required: ["channel", "reason"]
+            },
+            sponsorMatch: {
+              type: Type.OBJECT,
+              properties: {
+                tier: { type: Type.STRING },
+                reason: { type: Type.STRING }
+              },
+              required: ["tier", "reason"]
+            }
+          },
+          required: ["eventMatch", "communityMatch", "sponsorMatch"]
+        }
+      }
+    });
+
+    const parsed = JSON.parse(response.text?.trim() || "{}");
+    res.json(parsed);
+  } catch (err: any) {
+    console.error("Gemini Recommendation matchmaking error:", err);
+    res.status(500).json({ error: "Failed to generate personal matchmaking recommendations." });
+  }
+});
+
 // --- NEW WORKSPACE & MULTI-ROLE SaaS ENDPOINTS ---
 
 // 1. ORGANIZER CAMPAIGNS (Email blast)
@@ -866,7 +1248,83 @@ app.delete("/api/community/posts/delete/:id", requireRole(['community_manager', 
   }
 });
 
-// 8. ADMIN DASHBOARD DIRECT CRM CONTROL & AUDITING
+// ==========================================
+// 8. FINTECH & DOUBLE-ENTRY TRANSACTION LEDGER API
+// ==========================================
+app.get("/api/fintech/wallet", (req: any, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Unauthorized access" });
+  }
+  const userId = req.user.id;
+  const balance = getWalletBalance(userId);
+  const ledger = getLedgerEntries(userId);
+  const payouts = getPayoutRequests(userId);
+  res.json({ balance, ledger, payouts });
+});
+
+app.post("/api/fintech/payout", (req: any, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Unauthorized access" });
+  }
+  const { amount, destinationIban } = req.body;
+  if (!amount || !destinationIban) {
+    return res.status(400).json({ error: "Payout amount and destination IBAN coordinates are required." });
+  }
+  try {
+    const request = submitPayoutRequest(req.user.id, Number(amount), destinationIban);
+    res.json({ success: true, payoutRequest: request, newBalance: getWalletBalance(req.user.id) });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post("/api/fintech/simulate-charge", (req: any, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Unauthorized access" });
+  }
+  const { amount, description, referenceType, referenceId, promoCode } = req.body;
+  if (!amount) {
+    return res.status(400).json({ error: "Charge amount is required for payment intent compilation." });
+  }
+
+  try {
+    const doubleAmt = Number(amount);
+    let promotionalDiscount = 0;
+    if (promoCode && promoCode.trim().toUpperCase() === "HACK_AUTUMN_20") {
+      promotionalDiscount = doubleAmt * 0.20; // 20% discount
+    }
+
+    const netChargeable = Math.max(0, doubleAmt - promotionalDiscount);
+    const taxValue = Math.round(netChargeable * 0.0825 * 100) / 100; // US sales tax simulator
+    const platformFee = Math.round(netChargeable * 0.05 * 100) / 100; // Platform split fee simulator
+    
+    // Simulate real credit card intent transaction processing
+    const ledgerItem = processPaymentSimulator(
+      req.user.id,
+      netChargeable,
+      description || "General platform service charge",
+      referenceType || "INVOICE",
+      referenceId || `ref-sim-chg-${Date.now()}`,
+      taxValue,
+      platformFee,
+      "CREDIT"
+    );
+
+    res.json({
+      success: true,
+      charge: ledgerItem,
+      discountApplied: promotionalDiscount,
+      taxCalculated: taxValue,
+      splitPlatformFee: platformFee,
+      netCollected: netChargeable,
+      newBalance: getWalletBalance(req.user.id)
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// 9. ADMIN DASHBOARD DIRECT CRM CONTROL & AUDITING
 app.get("/api/admin/users", requireRole(['admin']), (req, res) => {
   res.json(getAllUsersProfiles());
 });

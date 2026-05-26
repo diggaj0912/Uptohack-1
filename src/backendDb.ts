@@ -8,6 +8,30 @@ import {
 // Let's create the file-based persistence layer
 const DB_PATH = path.join(process.cwd(), 'database.json');
 
+export interface LedgerEntry {
+  id: string;
+  walletId: string; // userId who registers the balance change
+  amount: number;
+  type: 'CREDIT' | 'DEBIT';
+  idempotencyKey: string;
+  description: string;
+  referenceType: 'INVOICE' | 'PAYOUT' | 'REFUND' | 'TRANSFER' | 'SPONSORSHIP' | 'TICKET';
+  referenceId: string;
+  taxAmount: number;
+  platformSplitFee: number;
+  timestamp: string;
+}
+
+export interface PayoutRequest {
+  id: string;
+  userId: string;
+  userName: string;
+  amount: number;
+  destinationIban: string;
+  status: 'PENDING' | 'APPROVED' | 'DISBURSED' | 'FAILED';
+  createdAt: string;
+}
+
 interface DbSchema {
   users: Record<string, UserProfile & { passwordHash: string }>;
   resumes: Record<string, Resume>; // userId -> Resume
@@ -18,6 +42,8 @@ interface DbSchema {
   whatsAppReminders: WhatsAppReminder[];
   projectSubmissions: ProjectSubmission[];
   sponsorshipBundles: SponsorshipBundle[];
+  ledgerEntries?: LedgerEntry[];
+  payoutRequests?: PayoutRequest[];
 }
 
 // Default Presets to populate the DB initially
@@ -294,6 +320,48 @@ function loadDatabase(): DbSchema {
     try {
       const parsed = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
       // Merge with default properties to avoid missing arrays
+      const defaultLedger: LedgerEntry[] = [
+        {
+          id: "ledger-init-1",
+          walletId: "usr-organizer",
+          amount: 1450,
+          type: "CREDIT",
+          idempotencyKey: "idem-organizer-init",
+          description: "Initial Balance Setup reflecting historical event split margins.",
+          referenceType: "TRANSFER",
+          referenceId: "ref-system-init",
+          taxAmount: 0,
+          platformSplitFee: 0,
+          timestamp: new Date().toISOString()
+        },
+        {
+          id: "ledger-init-2",
+          walletId: "usr-student",
+          amount: 50,
+          type: "CREDIT",
+          idempotencyKey: "idem-student-init",
+          description: "Onboarding referral program bonus credit transfer.",
+          referenceType: "TRANSFER",
+          referenceId: "ref-system-init-2",
+          taxAmount: 0,
+          platformSplitFee: 0,
+          timestamp: new Date().toISOString()
+        },
+        {
+          id: "ledger-init-3",
+          walletId: "usr-sponsor",
+          amount: 10000,
+          type: "CREDIT",
+          idempotencyKey: "idem-sponsor-init",
+          description: "Corporate capital balance deposit for upcoming summits backing requests.",
+          referenceType: "TRANSFER",
+          referenceId: "ref-system-init-3",
+          taxAmount: 0,
+          platformSplitFee: 0,
+          timestamp: new Date().toISOString()
+        }
+      ];
+
       return {
         users: parsed.users || defaultUsers,
         resumes: parsed.resumes || defaultResumes,
@@ -303,13 +371,57 @@ function loadDatabase(): DbSchema {
         emailCampaigns: parsed.emailCampaigns || [],
         whatsAppReminders: parsed.whatsAppReminders || [],
         projectSubmissions: parsed.projectSubmissions || [],
-        sponsorshipBundles: parsed.sponsorshipBundles || []
+        sponsorshipBundles: parsed.sponsorshipBundles || [],
+        ledgerEntries: parsed.ledgerEntries || defaultLedger,
+        payoutRequests: parsed.payoutRequests || []
       };
     } catch (e) {
       console.error("Failed to parse database.json, rebuilding.", e);
     }
   }
   
+  const defaultLedger: LedgerEntry[] = [
+    {
+      id: "ledger-init-1",
+      walletId: "usr-organizer",
+      amount: 1450,
+      type: "CREDIT",
+      idempotencyKey: "idem-organizer-init",
+      description: "Initial Balance Setup reflecting historical event split margins.",
+      referenceType: "TRANSFER",
+      referenceId: "ref-system-init",
+      taxAmount: 0,
+      platformSplitFee: 0,
+      timestamp: new Date().toISOString()
+    },
+    {
+      id: "ledger-init-2",
+      walletId: "usr-student",
+      amount: 50,
+      type: "CREDIT",
+      idempotencyKey: "idem-student-init",
+      description: "Onboarding referral program bonus credit transfer.",
+      referenceType: "TRANSFER",
+      referenceId: "ref-system-init-2",
+      taxAmount: 0,
+      platformSplitFee: 0,
+      timestamp: new Date().toISOString()
+    },
+    {
+      id: "ledger-init-3",
+      walletId: "usr-sponsor",
+      amount: 10000,
+      type: "CREDIT",
+      idempotencyKey: "idem-sponsor-init",
+      description: "Corporate capital balance deposit for upcoming summits backing requests.",
+      referenceType: "TRANSFER",
+      referenceId: "ref-system-init-3",
+      taxAmount: 0,
+      platformSplitFee: 0,
+      timestamp: new Date().toISOString()
+    }
+  ];
+
   // Re-save fresh structure if not exists
   const freshDb: DbSchema = {
     users: defaultUsers,
@@ -331,7 +443,9 @@ function loadDatabase(): DbSchema {
     emailCampaigns: [],
     whatsAppReminders: [],
     projectSubmissions: [],
-    sponsorshipBundles: []
+    sponsorshipBundles: [],
+    ledgerEntries: defaultLedger,
+    payoutRequests: []
   };
   fs.writeFileSync(DB_PATH, JSON.stringify(freshDb, null, 2));
   return freshDb;
@@ -934,3 +1048,118 @@ export function upvotePost(postId: string): CommunityPost | null {
   }
   return null;
 }
+
+export function getWalletBalance(userId: string): number {
+  if (!db.ledgerEntries) db.ledgerEntries = [];
+  const entries = db.ledgerEntries.filter(e => e.walletId === userId);
+  let balance = 0;
+  for (const e of entries) {
+    if (e.type === "CREDIT") {
+      balance += e.amount;
+    } else {
+      balance -= e.amount;
+    }
+  }
+  return balance;
+}
+
+export function getLedgerEntries(userId: string): LedgerEntry[] {
+  if (!db.ledgerEntries) db.ledgerEntries = [];
+  return db.ledgerEntries.filter(e => e.walletId === userId).sort((a,b) => b.timestamp.localeCompare(a.timestamp));
+}
+
+export function submitPayoutRequest(userId: string, amount: number, destinationIban: string): PayoutRequest {
+  if (!db.payoutRequests) db.payoutRequests = [];
+  const user = db.users[userId];
+  const balance = getWalletBalance(userId);
+  if (balance < amount) {
+    throw new Error("Insufficient funds inside double-entry wallet for liquidation.");
+  }
+
+  // Create debit entry
+  const payId = `pay-${Date.now()}`;
+  const debitEntry: LedgerEntry = {
+    id: `ledger-debit-${Date.now()}`,
+    walletId: userId,
+    amount: amount,
+    type: "DEBIT",
+    idempotencyKey: `idem-payout-${payId}`,
+    description: `Disbursed automated Stripe Payout liquidation to IBAN ${destinationIban}`,
+    referenceType: "PAYOUT",
+    referenceId: payId,
+    taxAmount: 0,
+    platformSplitFee: 2.50, // Standard payout processing fee
+    timestamp: new Date().toISOString()
+  };
+  
+  db.ledgerEntries.push(debitEntry);
+
+  const req: PayoutRequest = {
+    id: payId,
+    userId,
+    userName: user?.fullName || "Partner Member",
+    amount,
+    destinationIban,
+    status: "PENDING",
+    createdAt: new Date().toISOString()
+  };
+
+  db.payoutRequests.push(req);
+  
+  if (user) {
+    user.balance = getWalletBalance(userId);
+  }
+
+  addAuditLog(userId, "PAYOUT_INITIATED", `Requested Stripe liquidation of $${amount} to ${destinationIban}`, "FinTech Core");
+  saveDatabase();
+
+  return req;
+}
+
+export function processPaymentSimulator(
+  userId: string, 
+  amount: number, 
+  description: string, 
+  referenceType: 'INVOICE' | 'PAYOUT' | 'REFUND' | 'TRANSFER' | 'SPONSORSHIP' | 'TICKET', 
+  referenceId: string, 
+  taxAmount: number, 
+  platformSplitFee: number, 
+  type: 'CREDIT' | 'DEBIT'
+): LedgerEntry {
+  if (!db.ledgerEntries) db.ledgerEntries = [];
+  
+  const entry: LedgerEntry = {
+    id: `ledger-txn-${Date.now()}-${Math.floor(Math.random()*1000)}`,
+    walletId: userId,
+    amount,
+    type,
+    idempotencyKey: `idem-sim-${Date.now()}-${Math.floor(Math.random()*100000)}`,
+    description,
+    referenceType,
+    referenceId,
+    taxAmount,
+    platformSplitFee,
+    timestamp: new Date().toISOString()
+  };
+
+  db.ledgerEntries.push(entry);
+
+  const user = db.users[userId];
+  if (user) {
+    user.balance = getWalletBalance(userId);
+  }
+
+  addAuditLog(userId, type === "CREDIT" ? "FINANCIAL_CREDIT" : "FINANCIAL_DEBIT", `${description}: Adjusted balance by $${amount}`, "FinTech Gateway");
+  saveDatabase();
+
+  return entry;
+}
+
+export function getPayoutRequests(userId?: string): PayoutRequest[] {
+  if (!db.payoutRequests) db.payoutRequests = [];
+  if (userId) {
+    return db.payoutRequests.filter(p => p.userId === userId);
+  }
+  return db.payoutRequests;
+}
+
